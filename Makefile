@@ -17,6 +17,7 @@ LIBS = $(patsubst %,-l%,$(call lc,$(SCR_COMPONENTS)))
 
 CC = mpicc
 CFLAGS += -std=gnu99 $(INCDIRS)
+# --disable-new-dtags is required to avoid RUNPATH issues messing up RPATH
 LDFLAGS += $(LIBDIRS) -Wl,--disable-new-dtags
 LDLIBS = $(LIBS)
 
