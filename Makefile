@@ -21,5 +21,10 @@ CFLAGS += -std=gnu99 -g $(INCDIRS)
 LDFLAGS += $(LIBDIRS) -Wl,--disable-new-dtags
 LDLIBS = $(LIBS)
 
+.PHONY: clean
+
 scrtest: scrtest.c Makefile
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LDLIBS)
+
+clean:
+	rm -f scrtest ckpt.*.txt
