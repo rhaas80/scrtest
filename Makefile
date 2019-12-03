@@ -9,7 +9,7 @@ comma=,
 SCR_HOME = $(PWD)/..
 
 # construct options to link and compile in SCR and all components
-SCR_COMPONENTS = spath scr kvtree filo AXL er redset shuffile rankstr
+SCR_COMPONENTS = scr spath kvtree rankstr AXL filo shuffile redset er
 
 INCDIRS := $(patsubst %,-I$(SCR_HOME)/%/install/include,$(SCR_COMPONENTS))
 LIBDIRS := $(patsubst %,-Wl$(comma)--rpath$(comma)$(SCR_HOME)/%/install/lib,$(SCR_COMPONENTS)) $(patsubst %,-L$(SCR_HOME)/%/install/lib,$(SCR_COMPONENTS))
