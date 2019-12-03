@@ -8,8 +8,9 @@
 
 #include "scr.h"
 
-#define ITER_INC 3 // how many iterations before we terminate voluntarily
+#define ITER_INC 10 // how many iterations before we terminate voluntarily
 int counter;       // my "state", just the iteration counter offset by rank
+const char prefix[] = PWD "/ckpts";
 
 void checkpoint(int rank)
 {
@@ -17,8 +18,8 @@ void checkpoint(int rank)
   SCR_Start_checkpoint();
 
   // build the filename for our checkpoint file
-  char buf[100];
-  sprintf(buf, "ckpt.%d.txt", rank);
+  char buf[sizeof(prefix)+100];
+  sprintf(buf, "%s/ckpt.%d.txt", prefix, rank);
 
   // register our checkpoint file with SCR,
   // and ask SCR where to write the file
@@ -44,8 +45,8 @@ void restart(int rank)
   SCR_Start_restart(NULL);
 
   // build the filename for our checkpoint file
-  char buf[100];
-  sprintf(buf, "ckpt.%d.txt", rank);
+  char buf[sizeof(prefix)+100];
+  sprintf(buf, "%s/ckpt.%d.txt", prefix, rank);
 
   // ask SCR where to read the checkpoint from
   char scr_file[SCR_MAX_FILENAME];
@@ -74,6 +75,15 @@ int main(int argc, char **argv)
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
+  // set some SCR options
+  const char *cfg1 = SCR_Config("SCR_CHECKPOINT_SECONDS=3");
+  assert(cfg1);
+
+  char prefix_config[sizeof(prefix)+100];
+  sprintf(prefix_config, "SCR_PREFIX=%s", prefix);
+  const char *cfg2 = SCR_Config(prefix_config);
+  assert(cfg2);
+
   if(SCR_Init() == SCR_SUCCESS) {
     // initialization
     int have_restart;
@@ -94,9 +104,17 @@ int main(int argc, char **argv)
       int flag = 0;
       SCR_Need_checkpoint(&flag);
       if (flag) {
+        if (rank == 0)
+          printf("Checkpointing at iteration: %d\n", counter);
         // execute the checkpoint code
         checkpoint(rank);
       }
+
+      // should we exit?
+      int exit_flag = 0;
+      SCR_Should_exit(&exit_flag);
+      if (exit_flag)
+        break;
     }
 
     // termination checkpoint
