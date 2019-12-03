@@ -16,7 +16,7 @@ LIBDIRS := $(patsubst %,-Wl$(comma)--rpath$(comma)$(SCR_HOME)/%/install/lib,$(SC
 LIBS = $(patsubst %,-l%,$(call lc,$(SCR_COMPONENTS)))
 
 CC = mpicc
-CFLAGS += -std=gnu99 -Wall -g -DPWD='"$(shell pwd)"' $(INCDIRS)
+CFLAGS += -std=gnu99 -Wall -g $(INCDIRS)
 # --disable-new-dtags is required to avoid RUNPATH issues messing up RPATH
 LDFLAGS += $(LIBDIRS) -Wl,--disable-new-dtags
 LDLIBS = $(LIBS)

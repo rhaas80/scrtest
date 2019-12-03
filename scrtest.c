@@ -10,7 +10,7 @@
 
 #define ITER_INC 10 // how many iterations before we terminate voluntarily
 int counter;       // my "state", just the iteration counter offset by rank
-const char prefix[] = PWD "/ckpts";
+const char *prefix;
 
 void checkpoint(int rank)
 {
@@ -18,7 +18,7 @@ void checkpoint(int rank)
   SCR_Start_checkpoint();
 
   // build the filename for our checkpoint file
-  char buf[sizeof(prefix)+100];
+  char buf[SCR_MAX_FILENAME];
   sprintf(buf, "%s/ckpt.%d.txt", prefix, rank);
 
   // register our checkpoint file with SCR,
@@ -45,7 +45,7 @@ void restart(int rank)
   SCR_Start_restart(NULL);
 
   // build the filename for our checkpoint file
-  char buf[sizeof(prefix)+100];
+  char buf[SCR_MAX_FILENAME];
   sprintf(buf, "%s/ckpt.%d.txt", prefix, rank);
 
   // ask SCR where to read the checkpoint from
@@ -75,13 +75,14 @@ int main(int argc, char **argv)
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
+  // this can only be set via ENV vars since the Perl scripts only look at them
+  if ((prefix = getenv("SCR_PREFIX")) == NULL)
+    prefix = ".";
+
   // set some SCR options
   const char *cfg1 = SCR_Config("SCR_CHECKPOINT_SECONDS=3");
   assert(cfg1);
-
-  char prefix_config[sizeof(prefix)+100];
-  sprintf(prefix_config, "SCR_PREFIX=%s", prefix);
-  const char *cfg2 = SCR_Config(prefix_config);
+  const char *cfg2 = SCR_Config("SCR_COPY_TYPE=SINGLE");
   assert(cfg2);
 
   if(SCR_Init() == SCR_SUCCESS) {
