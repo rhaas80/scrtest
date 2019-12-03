@@ -11,8 +11,11 @@ SCR_HOME = $(PWD)/..
 # construct options to link and compile in SCR and all components
 SCR_COMPONENTS = scr spath kvtree rankstr AXL filo shuffile redset er
 
+# on some systems the lib directory is called lib64 on some just lib
+LIBDIR := $(notdir $(word 1,$(wildcard $(SCR_HOME)/scr/install/lib*)))
+
 INCDIRS := $(patsubst %,-I$(SCR_HOME)/%/install/include,$(SCR_COMPONENTS))
-LIBDIRS := $(patsubst %,-Wl$(comma)--rpath$(comma)$(SCR_HOME)/%/install/lib,$(SCR_COMPONENTS)) $(patsubst %,-L$(SCR_HOME)/%/install/lib,$(SCR_COMPONENTS))
+LIBDIRS := $(patsubst %,-Wl$(comma)--rpath$(comma)$(SCR_HOME)/%/install/$(LIBDIR),$(SCR_COMPONENTS)) $(patsubst %,-L$(SCR_HOME)/%/install/$(LIBDIR),$(SCR_COMPONENTS))
 LIBS = $(patsubst %,-l%,$(call lc,$(SCR_COMPONENTS)))
 
 CC = mpicc
