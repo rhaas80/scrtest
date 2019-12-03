@@ -21,4 +21,5 @@ CFLAGS += -std=gnu99 -g $(INCDIRS)
 LDFLAGS += $(LIBDIRS) -Wl,--disable-new-dtags
 LDLIBS = $(LIBS)
 
-scrtest: Makefile
+scrtest: scrtest.c Makefile
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LDLIBS)
