@@ -27,4 +27,4 @@ scrtest: scrtest.c Makefile
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LDLIBS)
 
 clean:
-	rm -f scrtest ckpt.*.txt
+	rm -f scrtest
