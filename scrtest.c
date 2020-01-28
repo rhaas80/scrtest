@@ -75,6 +75,12 @@ int main(int argc, char **argv)
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
+  // disabled buffering for progress output
+  setbuf(stdout, NULL);
+
+  if (rank == 0)
+    printf("Starting...\n");
+
   // this can only be set via ENV vars since the Perl scripts only look at them
   if ((prefix = getenv("SCR_PREFIX")) == NULL)
     prefix = ".";
@@ -96,7 +102,11 @@ int main(int argc, char **argv)
 
     // main loop
     int initial_counter = counter;
+    if (rank == 0)
+      printf("Iterating from %d for %d iterations\n", initial_counter, ITER_INC);
     while(counter - initial_counter < ITER_INC) {
+      if (rank == 0)
+        printf("Checking consistency...\n");
       // check consistency of data across ranks
       int global_counter = counter;
       MPI_Bcast(&global_counter, 1, MPI_INT, 0, MPI_COMM_WORLD);
@@ -105,6 +115,8 @@ int main(int argc, char **argv)
         MPI_Abort(MPI_COMM_WORLD, 1);
       }
 
+      if (rank == 0)
+        printf("In iteration %d\n", counter);
       // "science" loop
       sleep(1);
       counter += 1;
@@ -125,6 +137,7 @@ int main(int argc, char **argv)
       if (exit_flag)
         break;
     }
+    printf("Done with iterations\n");
 
     // termination checkpoint
     checkpoint(rank);
@@ -134,6 +147,7 @@ int main(int argc, char **argv)
     // all is good
     rc = 0;
   }
+  printf("Exiting...\n");
 
   MPI_Finalize();
 
