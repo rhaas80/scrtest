@@ -99,7 +99,7 @@ int main(int argc, char **argv)
     while(counter - initial_counter < ITER_INC) {
       // check consistency of data across ranks
       int global_counter = counter;
-      MPI_Bcast(&global_counter, MPI_INT, 1, 0, MPI_COMM_WORLD);
+      MPI_Bcast(&global_counter, 1, MPI_INT, 0, MPI_COMM_WORLD);
       if(global_counter + rank != counter) {
         fprintf(stderr, "Inconsistent state %d != %d on rank %d\n", global_counter + rank, counter, rank);
         MPI_Abort(MPI_COMM_WORLD, 1);
