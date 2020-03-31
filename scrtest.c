@@ -2,8 +2,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
-#include <string.h>
-#include <time.h>
 #include <unistd.h>
 
 #include <mpi.h>
@@ -26,10 +24,7 @@ void checkpoint(int rank)
   // register our checkpoint file with SCR,
   // and ask SCR where to write the file
   char scr_file[SCR_MAX_FILENAME];
-  // copy path into scr_file in case SCR is disabled (in which case route_file
-  // does nothing)
-  strncpy(scr_file, buf, SCR_MAX_FILENAME);
-  (void)SCR_Route_file(buf, scr_file);
+  SCR_Route_file(buf, scr_file); 
   printf("checkpoint: %s\n", scr_file);
 
   // write our checkpoint file
@@ -55,10 +50,7 @@ void restart(int rank)
 
   // ask SCR where to read the checkpoint from
   char scr_file[SCR_MAX_FILENAME];
-  // copy path into scr_file in case SCR is disabled (in which case route_file
-  // does nothing)
-  strncpy(scr_file, buf, SCR_MAX_FILENAME);
-  (void)SCR_Route_file(buf, scr_file);
+  SCR_Route_file(buf, scr_file);
   printf("recover: %s\n", scr_file);
 
   // read our checkpoint file
@@ -94,70 +86,67 @@ int main(int argc, char **argv)
     prefix = ".";
 
   // set some SCR options
-  setenv("SCR_CHECKPOINT_SECONDS", "3", 1);
-  setenv("SCR_COPY_TYPE", "SINGLE", 1);
+  const char *cfg1 = SCR_Config("SCR_CHECKPOINT_SECONDS=3");
+  assert(cfg1);
+  const char *cfg2 = SCR_Config("SCR_COPY_TYPE=SINGLE");
+  assert(cfg2);
 
-  // initialization
-  (void)SCR_Init();
+  if(SCR_Init() == SCR_SUCCESS) {
+    // initialization
+    int have_restart;
+    SCR_Have_restart(&have_restart, NULL);
+    if (have_restart)
+      restart(rank);
+    else
+      counter = rank;
 
-  int have_restart;
-  SCR_Have_restart(&have_restart, NULL);
-  if (have_restart)
-    restart(rank);
-  else
-    counter = rank;
-
-  // main loop
-  time_t time_of_last_checkpoint = time(NULL);
-  int initial_counter = counter;
-  if (rank == 0)
-    printf("Iterating from %d for %d iterations\n", initial_counter, ITER_INC);
-  while(counter - initial_counter < ITER_INC) {
+    // main loop
+    int initial_counter = counter;
     if (rank == 0)
-      printf("Checking consistency...\n");
-    // check consistency of data across ranks
-    int global_counter = counter;
-    MPI_Bcast(&global_counter, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    if(global_counter + rank != counter) {
-      fprintf(stderr, "Inconsistent state %d != %d on rank %d\n", global_counter + rank, counter, rank);
-      MPI_Abort(MPI_COMM_WORLD, 1);
-    }
-
-    if (rank == 0)
-      printf("In iteration %d\n", counter);
-    // "science" loop
-    sleep(1);
-    counter += 1;
-
-    // ask SCR whether we need to checkpoint
-    time_t current_time = time(NULL);
-    int flag = 0;
-    SCR_Need_checkpoint(&flag);
-    if (flag || ((current_time - time_of_last_checkpoint) > 5)) {
-      time_of_last_checkpoint = current_time;
+      printf("Iterating from %d for %d iterations\n", initial_counter, ITER_INC);
+    while(counter - initial_counter < ITER_INC) {
+      if (rank == 0)
+        printf("Checking consistency...\n");
+      // check consistency of data across ranks
+      int global_counter = counter;
+      MPI_Bcast(&global_counter, 1, MPI_INT, 0, MPI_COMM_WORLD);
+      if(global_counter + rank != counter) {
+        fprintf(stderr, "Inconsistent state %d != %d on rank %d\n", global_counter + rank, counter, rank);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+      }
 
       if (rank == 0)
-        printf("Checkpointing at iteration: %d\n", counter);
-      // execute the checkpoint code
-      checkpoint(rank);
+        printf("In iteration %d\n", counter);
+      // "science" loop
+      sleep(1);
+      counter += 1;
+
+      // ask SCR whether we need to checkpoint
+      int flag = 0;
+      SCR_Need_checkpoint(&flag);
+      if (flag) {
+        if (rank == 0)
+          printf("Checkpointing at iteration: %d\n", counter);
+        // execute the checkpoint code
+        checkpoint(rank);
+      }
+
+      // should we exit?
+      int exit_flag = 0;
+      SCR_Should_exit(&exit_flag);
+      if (exit_flag)
+        break;
     }
+    printf("Done with iterations\n");
 
-    // should we exit?
-    int exit_flag = 0;
-    SCR_Should_exit(&exit_flag);
-    if (exit_flag)
-      break;
+    // termination checkpoint
+    checkpoint(rank);
+
+    SCR_Finalize();
+
+    // all is good
+    rc = 0;
   }
-  printf("Done with iterations\n");
-
-  // termination checkpoint
-  checkpoint(rank);
-
-  SCR_Finalize();
-
-  // all is good
-  rc = 0;
-
   printf("Exiting...\n");
 
   MPI_Finalize();
