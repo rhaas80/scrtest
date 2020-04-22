@@ -31,3 +31,4 @@ scrtest: scrtest.c Makefile
 
 clean:
 	rm -f scrtest
+	rm -rf ckpt.?.txt .scr
