@@ -13,13 +13,13 @@
 // internal SCR function to get remaining job time
 extern long int scr_env_seconds_remaining(void);
 
-#define SCR_HALT_SECONDS 120
+#define SCR_HALT_SECONDS 360
 
 int counter;       // my "state", just the iteration counter offset by rank
 int restartcount;  // how often we have restarted
 const char *prefix;
 
-enum failure_t {NO_FAIL, FAIL, FAIL_LATE}; /* should we trigger an intentional failure? */
+enum failure_t {NO_FAIL, FAIL, FAIL_MEDIAN, FAIL_LATE}; /* should we trigger an intentional failure? */
 
 void checkpoint(int rank, enum failure_t do_fail)
 {
@@ -27,8 +27,12 @@ void checkpoint(int rank, enum failure_t do_fail)
   SCR_Start_checkpoint();
 
   MPI_Barrier(MPI_COMM_WORLD);
-  if(do_fail == FAIL)
+  // check behaviour if one rank fails to create a checkpoint file
+  if(do_fail == FAIL) {
+    // this waits for the MPI_Barrier after flcose
+    MPI_Barrier(MPI_COMM_WORLD);
     exit(1);
+  }
 
   // build the filename for our checkpoint file
   char buf[SCR_MAX_FILENAME];
@@ -48,11 +52,18 @@ void checkpoint(int rank, enum failure_t do_fail)
   fprintf(fh, "rank %d\n", rank);
   fclose(fh);
 
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  // check behaviour if one rank create a valid checkpoint file but does not
+  if(do_fail == FAIL_MEDIAN)
+    exit(1);
+
   // inform SCR whether this process wrote each of its
   // checkpoint files successfully
   SCR_Complete_checkpoint(valid);
 
   MPI_Barrier(MPI_COMM_WORLD);
+  // simulate missing checkpoint file even though I claim to have written it
   if(do_fail == FAIL_LATE) {
     remove(scr_file); /* simulate node failure by removing checkpoint */
     exit(1);
@@ -115,6 +126,8 @@ long current_time_on_rank0(int rank)
 void read_restart(int rank)
 {
   const char *fn = "restartcount.dat";
+
+  // read previous value
   FILE *fh = fopen(fn, "r");
   if(fh != NULL) {
     fscanf(fh, "restartcount %d", &restartcount);
@@ -127,13 +140,14 @@ void read_restart(int rank)
 
   MPI_Barrier(MPI_COMM_WORLD);
 
+  // store new value
   if(rank == 0) {
     FILE *fh = fopen(fn, "w");
     if(fh == NULL) {
       fprintf(stderr, "Failed to open '%s': %s", fn, strerror(errno));
       exit(1);
     }
-    fprintf(fh, "restartcount %d", restartcount);
+    fprintf(fh, "restartcount %d\n", restartcount);
     fclose(fh);
   }
 }
@@ -153,12 +167,18 @@ int main(int argc, char **argv)
   // disabled buffering for progress output
   setbuf(stdout, NULL);
 
+  // end time from SLRUM scontrol
+  long end_time = strtol(getenv("SCRTEST_END_TIME"), NULL, 10);
+  long job_start_time = strtol(getenv("SCRTEST_JOB_START_TIME"), NULL, 10);
+
   if (rank == 0)
     printf("Starting...\n");
 
   // find out which step in the test scheme we are at. Do not use SCR
   // checkpoints for this so that we can test recovery failures.
   read_restart(rank);
+  if(rank == 0)
+    printf("Restart count: %d\n", restartcount);
 
   // this can only be set via ENV vars since the Perl scripts only look at them
   if ((prefix = getenv("SCR_PREFIX")) == NULL)
@@ -200,22 +220,40 @@ int main(int argc, char **argv)
       long now = current_time_on_rank0(rank);
       if (rank == 0)
         printf("In iteration %d, running %ld seconds\n", counter, now - start_time);
+      if (rank == 0) {
+          long my_remaining = end_time - now;
+          // apaprently this time is only good on rank 0
+          int scr_remaining = scr_env_seconds_remaining();
+          printf("Time since job start: %d rem: %d %d\n", (int)(time(NULL) - job_start_time), (int)my_remaining, (int)scr_remaining);
+      }
       // "science" loop
       sleep(10);
       counter += 1;
+      if (rank == 0) {
+          long my_remaining = end_time - time(NULL);
+          // apaprently this time is only good on rank 0
+          int scr_remaining = scr_env_seconds_remaining();
+          printf("Time since job start: %d rem: %d %d\n", (int)(time(NULL) - job_start_time), (int)my_remaining, (int)scr_remaining);
+      }
 
       // trigger various issues
       MPI_Barrier(MPI_COMM_WORLD);
       if(counter == 1 && restartcount == 0) {
+        if(rank == 0)
+          printf("Writing initial checkpoint\n");
         // get some initial checkpoint
         checkpoint(rank, NO_FAIL);
       }
       if(rank == 0 && counter == 2 && restartcount == 0) {
         // trigger a failure so that we recover from checkpoint just written
+        if(rank == 0)
+          printf("Triggering failure before writing checkpoint\n");
         exit(1);
       }
       if(counter == 3 && restartcount == 1) {
         // trigger a failure while writing a checkpoint
+        if(rank == 0)
+          printf("Triggering failure after Start_checkpoint while writing checkpoint\n");
         if(rank == 1) {
           checkpoint(rank, FAIL);
         } else {
@@ -224,6 +262,8 @@ int main(int argc, char **argv)
       }
       if(counter == 4 && restartcount == 2) {
         // try simulating failure by first writing a checkpoint then wiping it
+        if(rank == 0)
+          printf("Triggering failure after Complete_checkpoint while writing checkpoint\n");
         if(rank == 1) {
           checkpoint(rank, FAIL_LATE);
         } else {
@@ -231,9 +271,29 @@ int main(int argc, char **argv)
         }
       }
       if(counter == 5 && restartcount == 3) {
+        // try simulating failure after having written a valid file but not marking it so
+        if(rank == 0)
+          printf("Triggering failure after fclose while writing checkpoint\n");
+        if(rank == 1) {
+          checkpoint(rank, FAIL_LATE);
+        } else {
+          checkpoint(rank, NO_FAIL);
+        }
+      }
+      if(counter == 6 && restartcount == 4) {
         // cause a failure later enough so that SCR should not restart
-        sleep(scr_env_seconds_remaining() - SCR_HALT_SECONDS + 30);
-        exit(1);
+        if(rank == 0) {
+          long my_remaining = end_time - time(NULL);
+          // apaprently this time is only good on rank 0
+          int scr_remaining = scr_env_seconds_remaining();
+          printf("rank %d: my = %d scr = %d, diff = %d\n", rank, (int) my_remaining, (int) scr_remaining, (int)(scr_remaining - my_remaining));
+
+          int wait_time = scr_remaining - SCR_HALT_SECONDS + 30;
+          printf("Running simulation out of tiem by waiting %d seconds\n", wait_time);
+          sleep(wait_time);
+          printf("exiting\n");
+          exit(1);
+        }
       }
       MPI_Barrier(MPI_COMM_WORLD);
 
